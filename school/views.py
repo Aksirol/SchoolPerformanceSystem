@@ -13,13 +13,13 @@ from .models import TeacherSubject, Grade, Student, Semester, SchoolClass
 from .forms import GradeForm
 
 
-# Декоратор для розмежування прав доступу (тільки для вчителів)
+# Декоратор для розмежування прав доступу (для вчителів ТА класних керівників)
 def teacher_required(function):
     def wrap(request, *args, **kwargs):
-        if request.user.is_authenticated and request.user.role == 'teacher':
+        # Дозволяємо доступ користувачам з ролями 'teacher' або 'homeroom'
+        if request.user.is_authenticated and request.user.role in ['teacher', 'homeroom']:
             return function(request, *args, **kwargs)
-        raise PermissionDenied("Доступ дозволено лише вчителям.")
-
+        raise PermissionDenied("Доступ дозволено лише вчителям та класним керівникам.")
     return wrap
 
 
@@ -197,3 +197,38 @@ def homeroom_dashboard_api(request):
         "class_name": school_class.name,
         "students": report_data
     })
+
+
+@login_required
+@teacher_required
+def edit_grade(request, grade_id):
+    """T2: Редагування раніше виставленої оцінки"""
+    # Перевіряємо, чи належить оцінка вчителю, який робить запит
+    grade = get_object_or_404(Grade, id=grade_id, teacher_subject__teacher=request.user.teacher_profile)
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            form = GradeForm(data, instance=grade)
+            if form.is_valid():
+                form.save()
+                return JsonResponse({"status": "success", "message": "Оцінку успішно оновлено"})
+            return JsonResponse({"status": "error", "errors": form.errors}, status=400)
+        except json.JSONDecodeError:
+            return JsonResponse({"status": "error", "message": "Неправильний формат даних"}, status=400)
+
+    return JsonResponse({"status": "error", "message": "Метод не підтримується"}, status=405)
+
+
+@login_required
+@teacher_required
+def delete_grade(request, grade_id):
+    """T2: Видалення оцінки"""
+    # Перевіряємо права на видалення
+    grade = get_object_or_404(Grade, id=grade_id, teacher_subject__teacher=request.user.teacher_profile)
+
+    if request.method in ['DELETE', 'POST']:
+        grade.delete()
+        return JsonResponse({"status": "success", "message": "Оцінку успішно видалено"})
+
+    return JsonResponse({"status": "error", "message": "Метод не підтримується"}, status=405)
