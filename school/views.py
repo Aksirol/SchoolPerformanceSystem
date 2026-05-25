@@ -1,3 +1,6 @@
+import csv
+from django.http import HttpResponse
+from django.utils.encoding import smart_str
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -6,7 +9,7 @@ from django.db.models import Avg
 from django.shortcuts import render
 import json
 
-from .models import TeacherSubject, Grade, Student, Semester
+from .models import TeacherSubject, Grade, Student, Semester, SchoolClass
 from .forms import GradeForm
 
 
@@ -129,3 +132,68 @@ def get_journal_data(request, assignment_id):
                  for sem in Semester.objects.filter(academic_year=assignment.school_class.academic_year)]
 
     return JsonResponse({"students": students, "semesters": semesters})
+
+
+@login_required
+@teacher_required
+def export_grades_csv(request, assignment_id):
+    """T3: Формування звіту успішності по предмету у форматі CSV"""
+    assignment = get_object_or_404(TeacherSubject, id=assignment_id, teacher=request.user.teacher_profile)
+
+    # Створюємо HTTP відповідь з типом контенту CSV
+    response = HttpResponse(
+        content_type='text/csv; charset=utf-8-sig')  # utf-8-sig для коректного відображення кирилиці в Excel
+    response[
+        'Content-Disposition'] = f'attachment; filename="Zvit_{assignment.school_class.name}_{assignment.subject.name}.csv"'
+
+    writer = csv.writer(response, delimiter=';')
+    # Заголовки колонок
+    writer.writerow(['ПІБ Учня', 'Дата', 'Оцінка/Статус', 'Семестр', 'Коментар'])
+
+    grades = Grade.objects.filter(teacher_subject=assignment).select_related('student', 'semester').order_by(
+        'student__last_name', 'grade_date')
+
+    for grade in grades:
+        student_name = f"{grade.student.last_name} {grade.student.first_name}"
+        value = grade.value if grade.grade_type == 'Оцінка' else grade.grade_type
+        writer.writerow([
+            smart_str(student_name),
+            grade.grade_date.strftime('%d.%m.%Y'),
+            value,
+            grade.semester.number,
+            smart_str(grade.comment or '')
+        ])
+
+    return response
+
+
+@login_required
+@teacher_required
+def homeroom_dashboard_api(request):
+    """K1: Перегляд зведеної успішності класу для класного керівника"""
+    teacher = request.user.teacher_profile
+    # Шукаємо клас, де цей вчитель є керівником
+    school_class = SchoolClass.objects.filter(homeroom_teacher=teacher).first()
+
+    if not school_class:
+        return JsonResponse({"status": "error", "message": "Ви не є класним керівником жодного класу."}, status=403)
+
+    students = Student.objects.filter(school_class=school_class).order_by('last_name')
+    report_data = []
+
+    for student in students:
+        # Отримуємо всі оцінки учня
+        grades = Grade.objects.filter(student=student, grade_type='Оцінка', value__isnull=False)
+        avg_score = grades.aggregate(Avg('value'))['value__avg']
+
+        report_data.append({
+            "student_name": f"{student.last_name} {student.first_name}",
+            "average_score": round(avg_score, 2) if avg_score else "Немає оцінок",
+            "total_grades_count": grades.count()
+        })
+
+    return JsonResponse({
+        "status": "success",
+        "class_name": school_class.name,
+        "students": report_data
+    })

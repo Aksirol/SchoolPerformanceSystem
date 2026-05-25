@@ -14,4 +14,10 @@ urlpatterns = [
     # Нові маршрути для HTML-сторінок фронтенду:
     path('teacher/', views.teacher_page, name='teacher_page'),
     path('student/', views.student_page, name='student_page'),
+
+    # Експорт звіту вчителя (T3)
+    path('api/teacher/assignment/<int:assignment_id>/export/', views.export_grades_csv, name='export_grades_csv'),
+
+    # API класного керівника (K1)
+    path('api/homeroom/dashboard/', views.homeroom_dashboard_api, name='homeroom_dashboard_api'),
 ]
