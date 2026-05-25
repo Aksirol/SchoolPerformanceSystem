@@ -1,7 +1,7 @@
 import csv
 from django.http import HttpResponse
 from django.utils.encoding import smart_str
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
@@ -239,3 +239,13 @@ def delete_grade(request, grade_id):
         return JsonResponse({"status": "success", "message": "Оцінку успішно видалено"})
 
     return JsonResponse({"status": "error", "message": "Метод не підтримується"}, status=405)
+
+# views.py
+@login_required
+def role_redirect(request):
+    role = request.user.role
+    if role == 'admin':
+        return redirect('/admin/')
+    if role in ('teacher', 'homeroom'):
+        return redirect('school:teacher_page')
+    return redirect('school:student_page')

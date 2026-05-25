@@ -28,4 +28,6 @@ urlpatterns = [
 
     # API класного керівника (K1)
     path('api/homeroom/dashboard/', views.homeroom_dashboard_api, name='homeroom_dashboard_api'),
+
+    path('', views.role_redirect, name='role_redirect'),
 ]

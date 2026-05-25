@@ -4,103 +4,185 @@
     <meta charset="UTF-8">
     <title>Успішність учня | School System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+        th.sortable:hover { background-color: #495057; }
+        th.sortable::after { content: ' ⇅'; opacity: 0.4; font-size: .8em; }
+        th.sortable.asc::after  { content: ' ↑'; opacity: 1; }
+        th.sortable.desc::after { content: ' ↓'; opacity: 1; }
+    </style>
 </head>
 <body class="bg-light">
-    <div class="container mt-5">
+
+    <nav class="navbar navbar-dark bg-primary mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="#">SchoolPerformanceSystem</a>
+            <span class="navbar-text text-white-50 me-auto ms-3">Електронний щоденник</span>
+            <form method="post" action="/accounts/logout/" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-light btn-sm">Вийти</button>
+            </form>
+        </div>
+    </nav>
+
+    <div class="container">
         <div class="card shadow-sm">
             <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                <h4 class="mb-0">Електронний щоденник</h4>
+                <h4 class="mb-0">Мої оцінки</h4>
                 <span id="student-name" class="fw-bold">Завантаження...</span>
             </div>
             <div class="card-body">
                 <div class="alert alert-info d-flex justify-content-between align-items-center">
                     <div><strong>Клас:</strong> <span id="student-class">...</span></div>
-                    <div><strong>Середній бал:</strong> <span id="average-score" class="badge bg-success fs-6">...</span></div>
+                    <div>
+                        <strong>Середній бал:</strong>
+                        <span id="average-score" class="badge bg-success fs-6 ms-1">...</span>
+                    </div>
                 </div>
 
-                <div class="row mb-3">
-                    <div class="col-md-8">
-                        <input type="text" id="searchInput" class="form-control" placeholder="🔍 Пошук за предметом або коментарем...">
+                <div class="row mb-3 g-2">
+                    <div class="col-md-5">
+                        <input type="text" id="searchInput" class="form-control"
+                               placeholder="🔍 Пошук за предметом або коментарем...">
                     </div>
-                    <div class="col-md-4">
-                        <select id="sortSelect" class="form-select">
-                            <option value="date_desc">Спочатку нові (за датою)</option>
-                            <option value="date_asc">Спочатку старі (за датою)</option>
-                            <option value="grade_desc">Найвищі оцінки</option>
-                            <option value="grade_asc">Найнижчі оцінки</option>
+                    <div class="col-md-3">
+                        <select id="subjectFilter" class="form-select">
+                            <option value="">Усі предмети</option>
                         </select>
                     </div>
+                    <div class="col-md-2">
+                        <select id="semesterFilter" class="form-select">
+                            <option value="">Усі семестри</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 text-end">
+                        <span class="text-muted small" id="count-label"></span>
+                    </div>
                 </div>
 
-                <table class="table table-striped table-hover">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>Предмет</th>
-                            <th>Оцінка / Статус</th>
-                            <th>Дата</th>
-                            <th>Коментар</th>
-                        </tr>
-                    </thead>
-                    <tbody id="grades-table-body"></tbody>
-                </table>
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th class="sortable" data-col="subject">Предмет</th>
+                                <th class="sortable text-center" data-col="value">Оцінка</th>
+                                <th class="sortable text-center" data-col="date">Дата</th>
+                                <th>Коментар</th>
+                            </tr>
+                        </thead>
+                        <tbody id="grades-table-body"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        let allGrades = []; // Зберігаємо всі оцінки глобально для сортування
+        let allGrades = [];
+        let sortState = { col: 'date', dir: 'desc' };
 
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             fetch('/api/student/dashboard/')
-                .then(response => response.json())
+                .then(r => r.json())
                 .then(data => {
                     document.getElementById('student-name').textContent = data.student_name;
                     document.getElementById('student-class').textContent = data.class;
-                    document.getElementById('average-score').textContent = data.average_score || 'Немає оцінок';
+                    const avg = data.average_score;
+                    const el  = document.getElementById('average-score');
+                    el.textContent = avg ? avg : 'Немає оцінок';
+                    if (avg) el.className = `badge fs-6 ms-1 ${avg >= 10 ? 'bg-success' : avg >= 7 ? 'bg-primary' : 'bg-warning'}`;
 
                     allGrades = data.grades;
-                    renderTable(); // Малюємо таблицю
+
+                    // Наповнення фільтрів
+                    const subjects  = [...new Set(allGrades.map(g => g.subject))].sort();
+                    const semesters = [...new Set(allGrades.map(g => g.semester))].filter(Boolean).sort();
+
+                    const subjSel = document.getElementById('subjectFilter');
+                    subjects.forEach(s => subjSel.insertAdjacentHTML('beforeend',
+                        `<option value="${s}">${s}</option>`));
+
+                    const semSel = document.getElementById('semesterFilter');
+                    semesters.forEach(s => semSel.insertAdjacentHTML('beforeend',
+                        `<option value="${s}">${s} сем.</option>`));
+
+                    renderTable();
                 });
 
-            // Слухачі подій для пошуку та сортування
-            document.getElementById('searchInput').addEventListener('input', renderTable);
-            document.getElementById('sortSelect').addEventListener('change', renderTable);
+            // Заголовки — сортування кліком
+            document.querySelectorAll('th.sortable').forEach(th => {
+                th.addEventListener('click', () => {
+                    const col = th.dataset.col;
+                    sortState = col === sortState.col
+                        ? { col, dir: sortState.dir === 'asc' ? 'desc' : 'asc' }
+                        : { col, dir: 'asc' };
+                    document.querySelectorAll('th.sortable').forEach(h => h.classList.remove('asc', 'desc'));
+                    th.classList.add(sortState.dir);
+                    renderTable();
+                });
+            });
+
+            ['searchInput', 'subjectFilter', 'semesterFilter'].forEach(id =>
+                document.getElementById(id).addEventListener('input', renderTable)
+            );
+
+            // Початковий стан заголовку дати
+            document.querySelector('th[data-col="date"]').classList.add('desc');
         });
 
         function renderTable() {
-            const tbody = document.getElementById('grades-table-body');
-            const searchQuery = document.getElementById('searchInput').value.toLowerCase();
-            const sortMethod = document.getElementById('sortSelect').value;
+            const q       = document.getElementById('searchInput').value.toLowerCase();
+            const subject = document.getElementById('subjectFilter').value;
+            const semester = document.getElementById('semesterFilter').value;
 
-            // 1. Фільтрація (Пошук)
-            let filteredGrades = allGrades.filter(g =>
-                g.subject.toLowerCase().includes(searchQuery) ||
-                (g.comment && g.comment.toLowerCase().includes(searchQuery))
-            );
-
-            // 2. Сортування
-            filteredGrades.sort((a, b) => {
-                if (sortMethod === 'date_desc') return new Date(b.date) - new Date(a.date);
-                if (sortMethod === 'date_asc') return new Date(a.date) - new Date(b.date);
-                if (sortMethod === 'grade_desc') return (b.value || 0) - (a.value || 0);
-                if (sortMethod === 'grade_asc') return (a.value || 0) - (b.value || 0);
+            let rows = allGrades.filter(g => {
+                const matchText = g.subject.toLowerCase().includes(q) ||
+                                  (g.comment && g.comment.toLowerCase().includes(q));
+                const matchSubj = !subject  || g.subject === subject;
+                const matchSem  = !semester || String(g.semester) === semester;
+                return matchText && matchSubj && matchSem;
             });
 
-            // 3. Відображення
-            tbody.innerHTML = '';
-            if (filteredGrades.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" class="text-center">Нічого не знайдено</td></tr>';
+            rows.sort((a, b) => {
+                let va, vb;
+                if (sortState.col === 'subject') {
+                    return sortState.dir === 'asc'
+                        ? a.subject.localeCompare(b.subject, 'uk')
+                        : b.subject.localeCompare(a.subject, 'uk');
+                }
+                if (sortState.col === 'value') {
+                    va = typeof a.value === 'number' ? a.value : -1;
+                    vb = typeof b.value === 'number' ? b.value : -1;
+                }
+                if (sortState.col === 'date') {
+                    va = new Date(a.date); vb = new Date(b.date);
+                }
+                return sortState.dir === 'asc' ? va - vb : vb - va;
+            });
+
+            document.getElementById('count-label').textContent =
+                `Показано: ${rows.length} із ${allGrades.length}`;
+
+            const tbody = document.getElementById('grades-table-body');
+            if (rows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Нічого не знайдено</td></tr>';
                 return;
             }
-
-            filteredGrades.forEach(g => {
-                tbody.insertAdjacentHTML('beforeend', `<tr>
+            tbody.innerHTML = rows.map(g => {
+                const isNum  = typeof g.value === 'number';
+                const badge  = isNum
+                    ? (g.value >= 10 ? 'bg-success' : g.value >= 7 ? 'bg-primary' : 'bg-warning')
+                    : 'bg-secondary';
+                const valStr = isNum ? g.value : g.value;
+                return `<tr>
                     <td>${g.subject}</td>
-                    <td class="fw-bold text-primary">${g.value}</td>
-                    <td>${g.date}</td>
-                    <td class="text-muted">${g.comment || '-'}</td>
-                </tr>`);
-            });
+                    <td class="text-center">
+                        <span class="badge ${badge}">${valStr}</span>
+                    </td>
+                    <td class="text-center">${g.date}</td>
+                    <td class="text-muted small">${g.comment || '—'}</td>
+                </tr>`;
+            }).join('');
         }
     </script>
 </body>

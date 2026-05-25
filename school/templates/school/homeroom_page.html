@@ -4,86 +4,233 @@
     <meta charset="UTF-8">
     <title>Панель Класного керівника | School System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+        th.sortable:hover { background-color: #495057; }
+        th.sortable::after { content: ' ⇅'; opacity: 0.4; font-size: .8em; }
+        th.sortable.asc::after  { content: ' ↑'; opacity: 1; }
+        th.sortable.desc::after { content: ' ↓'; opacity: 1; }
+    </style>
 </head>
 <body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-success mb-4">
+
+    <nav class="navbar navbar-dark bg-success mb-4">
         <div class="container">
             <a class="navbar-brand" href="#">SchoolPerformanceSystem</a>
-            <span class="navbar-text text-white-50">Панель класного керівника</span>
+            <span class="navbar-text text-white-50 me-auto ms-3">Класний керівник</span>
+            <form method="post" action="/accounts/logout/" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-light btn-sm">Вийти</button>
+            </form>
         </div>
     </nav>
 
-    <div class="container mt-4">
+    <div class="container">
         <div id="error-message" class="alert alert-danger d-none shadow-sm"></div>
 
         <div id="homeroom-content" class="card shadow-sm d-none">
             <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-                <h4 class="mb-0">📊 Зведена успішність класу: <span id="class-name" class="fw-bold">...</span></h4>
+                <h4 class="mb-0">
+                    📊 Зведена успішність класу:
+                    <span id="class-name" class="fw-bold">...</span>
+                </h4>
+                <div class="d-flex gap-2 align-items-center">
+                    <span class="badge bg-light text-dark" id="stats-label"></span>
+                </div>
             </div>
             <div class="card-body">
-                <p class="text-muted">Нижче наведено агреговану інформацію про успішність учнів вашого класу з усіх навчальних предметів.</p>
-                <div class="table-responsive mt-3">
+                <div class="row mb-3 g-2 align-items-center">
+                    <div class="col-md-4">
+                        <input type="text" id="searchInput" class="form-control form-control-sm"
+                               placeholder="🔍 Пошук за прізвищем...">
+                    </div>
+                    <div class="col-md-3">
+                        <select id="filterLevel" class="form-select form-select-sm">
+                            <option value="">Усі учні</option>
+                            <option value="high">Високий рівень (10–12)</option>
+                            <option value="mid">Достатній рівень (7–9)</option>
+                            <option value="low">Початковий/середній (1–6)</option>
+                            <option value="none">Немає оцінок</option>
+                        </select>
+                    </div>
+                    <div class="col-md-5 text-end">
+                        <span class="text-muted small" id="count-label"></span>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
                     <table class="table table-bordered table-hover align-middle">
                         <thead class="table-dark">
                             <tr>
-                                <th>ПІБ Учня</th>
-                                <th class="text-center" style="width: 200px;">Загальна кількість оцінок</th>
-                                <th class="text-center" style="width: 200px;">Середній бал</th>
+                                <th class="sortable" data-col="name">ПІБ Учня</th>
+                                <th class="sortable text-center" data-col="count"
+                                    style="width:200px">Кількість оцінок</th>
+                                <th class="sortable text-center" data-col="avg"
+                                    style="width:200px">Середній бал</th>
                             </tr>
                         </thead>
                         <tbody id="students-table-body">
-                            <tr><td colspan="3" class="text-center">Завантаження даних...</td></tr>
+                            <tr><td colspan="3" class="text-center text-muted">Завантаження...</td></tr>
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Зведена статистика класу -->
+                <div id="class-stats" class="row g-3 mt-2 d-none">
+                    <div class="col-md-3">
+                        <div class="card text-center border-success">
+                            <div class="card-body py-2">
+                                <div class="fs-4 fw-bold text-success" id="stat-high">—</div>
+                                <div class="small text-muted">Високий рівень</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center border-primary">
+                            <div class="card-body py-2">
+                                <div class="fs-4 fw-bold text-primary" id="stat-mid">—</div>
+                                <div class="small text-muted">Достатній рівень</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center border-warning">
+                            <div class="card-body py-2">
+                                <div class="fs-4 fw-bold text-warning" id="stat-low">—</div>
+                                <div class="small text-muted">Початковий/середній</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center border-secondary">
+                            <div class="card-body py-2">
+                                <div class="fs-4 fw-bold text-secondary" id="stat-avg">—</div>
+                                <div class="small text-muted">Середній бал по класу</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Робимо цільовий запит до API класного керівника (K1)
+        let allStudents = [];
+        let sortState   = { col: 'name', dir: 'asc' };
+
+        document.addEventListener('DOMContentLoaded', function () {
             fetch('/api/homeroom/dashboard/')
-                .then(response => {
-                    if (!response.ok) {
-                        return response.json().then(err => { throw err; });
-                    }
-                    return response.json();
-                })
+                .then(r => { if (r.ok) return r.json(); return r.json().then(e => { throw e; }); })
                 .then(data => {
-                    if (data.status === 'success') {
-                        // Показуємо панель і ховаємо помилку
-                        document.getElementById('homeroom-content').classList.remove('d-none');
-                        document.getElementById('class-name').textContent = data.class_name;
+                    if (data.status !== 'success') throw data;
 
-                        const tbody = document.getElementById('students-table-body');
+                    document.getElementById('homeroom-content').classList.remove('d-none');
+                    document.getElementById('class-name').textContent = data.class_name;
+                    allStudents = data.students;
 
-                        if (data.students.length === 0) {
-                            tbody.innerHTML = '<tr><td colspan="3" class="text-center">У цьому класі поки немає учнів</td></tr>';
-                            return;
-                        }
-
-                        // Малюємо таблицю учнів
-                        tbody.innerHTML = data.students.map(s => `
-                            <tr>
-                                <td><strong class="text-primary">${s.student_name}</strong></td>
-                                <td class="text-center">${s.total_grades_count}</td>
-                                <td class="text-center">
-                                    <span class="badge ${s.average_score >= 10 ? 'bg-success' : (s.average_score >= 7 ? 'bg-primary' : 'bg-warning')} fs-6">
-                                        ${s.average_score}
-                                    </span>
-                                </td>
-                            </tr>
-                        `).join('');
-                    }
+                    buildStats();
+                    renderTable();
                 })
-                .catch(error => {
-                    // Якщо вчитель зайшов сюди, але не має прив'язаного класу
-                    const errDiv = document.getElementById('error-message');
-                    errDiv.classList.remove('d-none');
-                    errDiv.innerHTML = `<strong>Доступ заборонено:</strong> ${error.message || "Ви не призначені класним керівником жодного класу."}`;
+                .catch(err => {
+                    const div = document.getElementById('error-message');
+                    div.classList.remove('d-none');
+                    div.innerHTML = `<strong>Помилка:</strong> ${err.message || 'Ви не призначені класним керівником жодного класу.'}`;
                 });
+
+            // Заголовки — сортування
+            document.querySelectorAll('th.sortable').forEach(th => {
+                th.addEventListener('click', () => {
+                    const col = th.dataset.col;
+                    sortState = col === sortState.col
+                        ? { col, dir: sortState.dir === 'asc' ? 'desc' : 'asc' }
+                        : { col, dir: 'asc' };
+                    document.querySelectorAll('th.sortable').forEach(h => h.classList.remove('asc', 'desc'));
+                    th.classList.add(sortState.dir);
+                    renderTable();
+                });
+            });
+
+            document.getElementById('searchInput').addEventListener('input', renderTable);
+            document.getElementById('filterLevel').addEventListener('change', renderTable);
+
+            // Початковий стан
+            document.querySelector('th[data-col="name"]').classList.add('asc');
         });
+
+        function buildStats() {
+            const avgs = allStudents
+                .map(s => parseFloat(s.average_score))
+                .filter(v => !isNaN(v));
+
+            const high = allStudents.filter(s => parseFloat(s.average_score) >= 10).length;
+            const mid  = allStudents.filter(s => { const v = parseFloat(s.average_score); return v >= 7 && v < 10; }).length;
+            const low  = allStudents.filter(s => { const v = parseFloat(s.average_score); return !isNaN(v) && v < 7; }).length;
+            const classAvg = avgs.length ? (avgs.reduce((a, b) => a + b, 0) / avgs.length).toFixed(2) : '—';
+
+            document.getElementById('stat-high').textContent = high;
+            document.getElementById('stat-mid').textContent  = mid;
+            document.getElementById('stat-low').textContent  = low;
+            document.getElementById('stat-avg').textContent  = classAvg;
+            document.getElementById('class-stats').classList.remove('d-none');
+        }
+
+        function renderTable() {
+            const q     = document.getElementById('searchInput').value.toLowerCase();
+            const level = document.getElementById('filterLevel').value;
+
+            let rows = allStudents.filter(s => {
+                const matchName = s.student_name.toLowerCase().includes(q);
+                const avg = parseFloat(s.average_score);
+                let matchLevel = true;
+                if (level === 'high') matchLevel = avg >= 10;
+                if (level === 'mid')  matchLevel = avg >= 7 && avg < 10;
+                if (level === 'low')  matchLevel = !isNaN(avg) && avg < 7;
+                if (level === 'none') matchLevel = isNaN(avg);
+                return matchName && matchLevel;
+            });
+
+            rows.sort((a, b) => {
+                if (sortState.col === 'name') {
+                    return sortState.dir === 'asc'
+                        ? a.student_name.localeCompare(b.student_name, 'uk')
+                        : b.student_name.localeCompare(a.student_name, 'uk');
+                }
+                const va = sortState.col === 'count'
+                    ? a.total_grades_count
+                    : parseFloat(a.average_score) || 0;
+                const vb = sortState.col === 'count'
+                    ? b.total_grades_count
+                    : parseFloat(b.average_score) || 0;
+                return sortState.dir === 'asc' ? va - vb : vb - va;
+            });
+
+            document.getElementById('count-label').textContent =
+                `Показано: ${rows.length} із ${allStudents.length} учнів`;
+
+            const tbody = document.getElementById('students-table-body');
+            if (rows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Нічого не знайдено</td></tr>';
+                return;
+            }
+            tbody.innerHTML = rows.map((s, i) => {
+                const avg   = parseFloat(s.average_score);
+                const badge = isNaN(avg) ? 'bg-secondary'
+                    : avg >= 10 ? 'bg-success'
+                    : avg >= 7  ? 'bg-primary'
+                    : 'bg-warning';
+                const avgStr = isNaN(avg) ? 'Немає оцінок' : s.average_score;
+                return `<tr>
+                    <td>
+                        <span class="text-muted small me-2">${i + 1}.</span>
+                        <strong class="text-primary">${s.student_name}</strong>
+                    </td>
+                    <td class="text-center">${s.total_grades_count}</td>
+                    <td class="text-center">
+                        <span class="badge ${badge} fs-6">${avgStr}</span>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
     </script>
 </body>
 </html>

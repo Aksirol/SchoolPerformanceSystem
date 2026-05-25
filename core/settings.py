@@ -146,5 +146,5 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Вказуємо Django використовувати нашу власну модель користувача
 AUTH_USER_MODEL = 'school.User'
 
-LOGIN_REDIRECT_URL = '/'
+LOGIN_REDIRECT_URL  = '/'   # після логіну → role_redirect
 LOGOUT_REDIRECT_URL = '/accounts/login/'
