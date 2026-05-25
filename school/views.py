@@ -3,6 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
 from django.db.models import Avg
+from django.shortcuts import render
 import json
 
 from .models import TeacherSubject, Grade, Student, Semester
@@ -99,3 +100,32 @@ def student_dashboard(request):
         "average_score": round(average_score, 2) if average_score else None,
         "grades": grades_data
     })
+
+@login_required
+@teacher_required
+def teacher_page(request):
+    """Відображення HTML-сторінки для вчителя"""
+    return render(request, 'school/teacher_page.html')
+
+@login_required
+@student_required
+def student_page(request):
+    """Відображення HTML-сторінки для учня"""
+    return render(request, 'school/student_page.html')
+
+
+@login_required
+@teacher_required
+def get_journal_data(request, assignment_id):
+    """Повертає список учнів та семестрів для обраного предмета/класу"""
+    assignment = get_object_or_404(TeacherSubject, id=assignment_id, teacher=request.user.teacher_profile)
+
+    # Витягуємо учнів цього класу
+    students = [{"id": s.id, "name": f"{s.last_name} {s.first_name}"}
+                for s in assignment.school_class.students.all().order_by('last_name')]
+
+    # Витягуємо семестри для поточного навчального року
+    semesters = [{"id": sem.id, "name": f"{sem.number} семестр"}
+                 for sem in Semester.objects.filter(academic_year=assignment.school_class.academic_year)]
+
+    return JsonResponse({"students": students, "semesters": semesters})

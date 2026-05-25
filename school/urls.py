@@ -4,10 +4,14 @@ from . import views
 app_name = 'school'
 
 urlpatterns = [
+    # Наші API маршрути...
     path('api/teacher/dashboard/', views.teacher_dashboard, name='teacher_dashboard'),
     path('api/teacher/assignment/<int:assignment_id>/student/<int:student_id>/semester/<int:semester_id>/grade/add/',
          views.add_grade, name='add_grade'),
-
-    # Новий маршрут для учня:
     path('api/student/dashboard/', views.student_dashboard, name='student_dashboard'),
+    path('api/teacher/assignment/<int:assignment_id>/journal-data/', views.get_journal_data, name='get_journal_data'),
+
+    # Нові маршрути для HTML-сторінок фронтенду:
+    path('teacher/', views.teacher_page, name='teacher_page'),
+    path('student/', views.student_page, name='student_page'),
 ]

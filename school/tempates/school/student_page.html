@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Успішність учня | School System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container mt-5">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Електронний щоденник</h4>
+                <span id="student-name" class="fw-bold">Завантаження...</span>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info d-flex justify-content-between align-items-center">
+                    <div><strong>Клас:</strong> <span id="student-class">...</span></div>
+                    <div><strong>Середній бал:</strong> <span id="average-score" class="badge bg-success fs-6">...</span></div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-8">
+                        <input type="text" id="searchInput" class="form-control" placeholder="🔍 Пошук за предметом або коментарем...">
+                    </div>
+                    <div class="col-md-4">
+                        <select id="sortSelect" class="form-select">
+                            <option value="date_desc">Спочатку нові (за датою)</option>
+                            <option value="date_asc">Спочатку старі (за датою)</option>
+                            <option value="grade_desc">Найвищі оцінки</option>
+                            <option value="grade_asc">Найнижчі оцінки</option>
+                        </select>
+                    </div>
+                </div>
+
+                <table class="table table-striped table-hover">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Предмет</th>
+                            <th>Оцінка / Статус</th>
+                            <th>Дата</th>
+                            <th>Коментар</th>
+                        </tr>
+                    </thead>
+                    <tbody id="grades-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allGrades = []; // Зберігаємо всі оцінки глобально для сортування
+
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/api/student/dashboard/')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('student-name').textContent = data.student_name;
+                    document.getElementById('student-class').textContent = data.class;
+                    document.getElementById('average-score').textContent = data.average_score || 'Немає оцінок';
+
+                    allGrades = data.grades;
+                    renderTable(); // Малюємо таблицю
+                });
+
+            // Слухачі подій для пошуку та сортування
+            document.getElementById('searchInput').addEventListener('input', renderTable);
+            document.getElementById('sortSelect').addEventListener('change', renderTable);
+        });
+
+        function renderTable() {
+            const tbody = document.getElementById('grades-table-body');
+            const searchQuery = document.getElementById('searchInput').value.toLowerCase();
+            const sortMethod = document.getElementById('sortSelect').value;
+
+            // 1. Фільтрація (Пошук)
+            let filteredGrades = allGrades.filter(g =>
+                g.subject.toLowerCase().includes(searchQuery) ||
+                (g.comment && g.comment.toLowerCase().includes(searchQuery))
+            );
+
+            // 2. Сортування
+            filteredGrades.sort((a, b) => {
+                if (sortMethod === 'date_desc') return new Date(b.date) - new Date(a.date);
+                if (sortMethod === 'date_asc') return new Date(a.date) - new Date(b.date);
+                if (sortMethod === 'grade_desc') return (b.value || 0) - (a.value || 0);
+                if (sortMethod === 'grade_asc') return (a.value || 0) - (b.value || 0);
+            });
+
+            // 3. Відображення
+            tbody.innerHTML = '';
+            if (filteredGrades.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center">Нічого не знайдено</td></tr>';
+                return;
+            }
+
+            filteredGrades.forEach(g => {
+                tbody.insertAdjacentHTML('beforeend', `<tr>
+                    <td>${g.subject}</td>
+                    <td class="fw-bold text-primary">${g.value}</td>
+                    <td>${g.date}</td>
+                    <td class="text-muted">${g.comment || '-'}</td>
+                </tr>`);
+            });
+        }
+    </script>
+</body>
+</html>
