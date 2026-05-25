@@ -2,6 +2,7 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
+from django.db.models import Avg
 import json
 
 from .models import TeacherSubject, Grade, Student, Semester
@@ -56,3 +57,45 @@ def add_grade(request, assignment_id, student_id, semester_id):
         return JsonResponse({"status": "error", "errors": form.errors}, status=400)
 
     return JsonResponse({"status": "ready", "message": "Надішліть POST запит для збереження оцінки"})
+
+
+# Декоратор для розмежування прав доступу (тільки для учнів/батьків)
+def student_required(function):
+    def wrap(request, *args, **kwargs):
+        if request.user.is_authenticated and request.user.role == 'student':
+            return function(request, *args, **kwargs)
+        raise PermissionDenied("Доступ дозволено лише учням та їхнім батькам.")
+
+    return wrap
+
+
+@login_required
+@student_required
+def student_dashboard(request):
+    """U1: Перегляд власних оцінок та середнього балу учня"""
+    # Знаходимо профіль учня, який прив'язаний до поточного користувача
+    student = get_object_or_404(Student, user=request.user)
+
+    # Витягуємо всі оцінки учня з прив'язкою до предметів
+    grades = Grade.objects.filter(student=student).select_related('teacher_subject__subject', 'semester')
+
+    # Розраховуємо середній бал тільки для числових оцінок (ігноруємо 'Н/Б', 'Зв.')
+    numeric_grades = grades.filter(grade_type='Оцінка', value__isnull=False)
+    average_score = numeric_grades.aggregate(Avg('value'))['value__avg']
+
+    # Формуємо список оцінок для фронтенду
+    grades_data = [
+        {
+            "subject": g.teacher_subject.subject.name,
+            "value": g.value if g.grade_type == 'Оцінка' else g.grade_type,
+            "date": g.grade_date.strftime('%Y-%m-%d'),
+            "comment": g.comment
+        } for g in grades
+    ]
+
+    return JsonResponse({
+        "student_name": f"{student.first_name} {student.last_name}",
+        "class": student.school_class.name,
+        "average_score": round(average_score, 2) if average_score else None,
+        "grades": grades_data
+    })

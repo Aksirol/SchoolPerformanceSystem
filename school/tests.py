@@ -5,6 +5,7 @@ from .models import AcademicYear, Semester, Teacher, Subject, SchoolClass, Stude
 import datetime
 from django.urls import reverse
 from django.test import Client
+from django.db.models import Avg
 
 User = get_user_model()
 
@@ -259,3 +260,63 @@ class TeacherViewsTest(TestCase):
         data = json.loads(response.content)
         # Перевіряємо, що помилка стосується саме поля 'value'
         self.assertIn('value', data['errors'])
+
+
+class StudentViewsTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+
+        # 1. Створюємо Учня з прив'язкою до користувача
+        self.user_student = User.objects.create_user(username='student_m', password='pass123', role='student')
+
+        self.year = AcademicYear.objects.create(name='2023-2024', start_date=datetime.date(2023, 9, 1),
+                                                end_date=datetime.date(2024, 5, 31))
+        self.semester = Semester.objects.create(number=1, academic_year=self.year, start_date=datetime.date(2023, 9, 1),
+                                                end_date=datetime.date(2023, 12, 24))
+        self.school_class = SchoolClass.objects.create(name='10-В', grade_number=10, academic_year=self.year)
+
+        self.student = Student.objects.create(
+            user=self.user_student, first_name='Марія', last_name='Козак',
+            birth_date=datetime.date(2008, 3, 8), school_class=self.school_class
+        )
+
+        # 2. Створюємо предмет та вчителя для виставлення оцінок
+        self.user_teacher = User.objects.create_user(username='teacher_t', password='pass123', role='teacher')
+        self.teacher = Teacher.objects.create(user=self.user_teacher, first_name='Тарас', last_name='Шевченко',
+                                              email='taras@school.com')
+        self.subject = Subject.objects.create(name='Історія')
+        self.assignment = TeacherSubject.objects.create(teacher=self.teacher, subject=self.subject,
+                                                        school_class=self.school_class)
+
+        # 3. Виставляємо 3 оцінки: дві числові (10 і 12) та одну 'Н/Б'. Середній бал має бути 11.0.
+        Grade.objects.create(student=self.student, teacher_subject=self.assignment, semester=self.semester, value=10,
+                             grade_type='Оцінка', grade_date=datetime.date(2023, 10, 1))
+        Grade.objects.create(student=self.student, teacher_subject=self.assignment, semester=self.semester, value=12,
+                             grade_type='Оцінка', grade_date=datetime.date(2023, 10, 5))
+        Grade.objects.create(student=self.student, teacher_subject=self.assignment, semester=self.semester,
+                             grade_type='Н/Б', grade_date=datetime.date(2023, 10, 10))
+
+    def test_student_dashboard_access_and_average_score(self):
+        """Перевірка доступу до власних оцінок та правильності розрахунку середнього балу"""
+        self.client.login(username='student_m', password='pass123')
+        response = self.client.get(reverse('school:student_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+
+        # Перевіряємо особисті дані
+        self.assertEqual(data['student_name'], 'Марія Козак')
+        self.assertEqual(data['class'], '10-В')
+
+        # Перевіряємо, чи повернулися всі 3 записи в журналі
+        self.assertEqual(len(data['grades']), 3)
+
+        # Перевіряємо, чи правильно розрахований середній бал ( (10 + 12) / 2 = 11.0 )
+        self.assertEqual(data['average_score'], 11.0)
+
+    def test_teacher_cannot_access_student_dashboard(self):
+        """Перевірка розмежування прав: вчитель не може зайти в панель учня"""
+        self.client.login(username='teacher_t', password='pass123')
+        response = self.client.get(reverse('school:student_dashboard'))
+        # Очікуємо статус 403 (Forbidden)
+        self.assertEqual(response.status_code, 403)
