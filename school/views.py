@@ -7,6 +7,7 @@ from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
 from django.db.models import Avg
 from django.shortcuts import render
+from functools import wraps
 import json
 
 from .models import TeacherSubject, Grade, Student, Semester, SchoolClass
@@ -15,8 +16,8 @@ from .forms import GradeForm
 
 # Декоратор для розмежування прав доступу (для вчителів ТА класних керівників)
 def teacher_required(function):
+    @wraps(function)           # ← додати цей рядок
     def wrap(request, *args, **kwargs):
-        # Дозволяємо доступ користувачам з ролями 'teacher' або 'homeroom'
         if request.user.is_authenticated and request.user.role in ['teacher', 'homeroom']:
             return function(request, *args, **kwargs)
         raise PermissionDenied("Доступ дозволено лише вчителям та класним керівникам.")
@@ -65,11 +66,11 @@ def add_grade(request, assignment_id, student_id, semester_id):
 
 # Декоратор для розмежування прав доступу (тільки для учнів/батьків)
 def student_required(function):
+    @wraps(function)           # ← і тут теж
     def wrap(request, *args, **kwargs):
         if request.user.is_authenticated and request.user.role == 'student':
             return function(request, *args, **kwargs)
         raise PermissionDenied("Доступ дозволено лише учням та їхнім батькам.")
-
     return wrap
 
 

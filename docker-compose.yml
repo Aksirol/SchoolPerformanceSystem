@@ -11,18 +11,25 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - mysql_data:/var/lib/mysql  # Ось ця лінія гарантує збереження даних при перезапусках!
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   web:
     build: .
     container_name: school_web
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
-      - .:/app  # Синхронізація файлів: змінюєте в PyCharm - оновлюється в контейнері
+      - .:/app
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy   # ← чекає поки MySQL реально готовий
     env_file:
       - .env
 
