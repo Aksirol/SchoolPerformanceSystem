@@ -1,0 +1,30 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: school_db
+    restart: always
+    environment:
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql  # Ось ця лінія гарантує збереження даних при перезапусках!
+
+  web:
+    build: .
+    container_name: school_web
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app  # Синхронізація файлів: змінюєте в PyCharm - оновлюється в контейнері
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    env_file:
+      - .env
+
+volumes:
+  mysql_data:
