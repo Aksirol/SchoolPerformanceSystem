@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Панель Класного керівника | School System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-success mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="#">SchoolPerformanceSystem</a>
+            <span class="navbar-text text-white-50">Панель класного керівника</span>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div id="error-message" class="alert alert-danger d-none shadow-sm"></div>
+
+        <div id="homeroom-content" class="card shadow-sm d-none">
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">📊 Зведена успішність класу: <span id="class-name" class="fw-bold">...</span></h4>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Нижче наведено агреговану інформацію про успішність учнів вашого класу з усіх навчальних предметів.</p>
+                <div class="table-responsive mt-3">
+                    <table class="table table-bordered table-hover align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ПІБ Учня</th>
+                                <th class="text-center" style="width: 200px;">Загальна кількість оцінок</th>
+                                <th class="text-center" style="width: 200px;">Середній бал</th>
+                            </tr>
+                        </thead>
+                        <tbody id="students-table-body">
+                            <tr><td colspan="3" class="text-center">Завантаження даних...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Робимо цільовий запит до API класного керівника (K1)
+            fetch('/api/homeroom/dashboard/')
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(err => { throw err; });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Показуємо панель і ховаємо помилку
+                        document.getElementById('homeroom-content').classList.remove('d-none');
+                        document.getElementById('class-name').textContent = data.class_name;
+
+                        const tbody = document.getElementById('students-table-body');
+
+                        if (data.students.length === 0) {
+                            tbody.innerHTML = '<tr><td colspan="3" class="text-center">У цьому класі поки немає учнів</td></tr>';
+                            return;
+                        }
+
+                        // Малюємо таблицю учнів
+                        tbody.innerHTML = data.students.map(s => `
+                            <tr>
+                                <td><strong class="text-primary">${s.student_name}</strong></td>
+                                <td class="text-center">${s.total_grades_count}</td>
+                                <td class="text-center">
+                                    <span class="badge ${s.average_score >= 10 ? 'bg-success' : (s.average_score >= 7 ? 'bg-primary' : 'bg-warning')} fs-6">
+                                        ${s.average_score}
+                                    </span>
+                                </td>
+                            </tr>
+                        `).join('');
+                    }
+                })
+                .catch(error => {
+                    // Якщо вчитель зайшов сюди, але не має прив'язаного класу
+                    const errDiv = document.getElementById('error-message');
+                    errDiv.classList.remove('d-none');
+                    errDiv.innerHTML = `<strong>Доступ заборонено:</strong> ${error.message || "Ви не призначені класним керівником жодного класу."}`;
+                });
+        });
+    </script>
+</body>
+</html>

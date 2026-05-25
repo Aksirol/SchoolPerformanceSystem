@@ -116,6 +116,12 @@ def student_page(request):
     """Відображення HTML-сторінки для учня"""
     return render(request, 'school/student_page.html')
 
+@login_required
+@teacher_required
+def homeroom_page(request):
+    """Відображення окремої HTML-сторінки для класного керівника (K1)"""
+    return render(request, 'school/homeroom_page.html')
+
 
 @login_required
 @teacher_required

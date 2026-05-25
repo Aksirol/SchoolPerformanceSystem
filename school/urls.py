@@ -20,9 +20,8 @@ urlpatterns = [
     path('teacher/', views.teacher_page, name='teacher_page'),
     path('student/', views.student_page, name='student_page'),
 
-    # НОВИЙ МАРШРУТ (Вирішення проблеми відсутності сторінки класного керівника)
-    # Ми використовуємо той самий teacher_page, оскільки він вже містить потрібний інтерфейс
-    path('homeroom/', views.teacher_page, name='homeroom_page'),
+    # Ізольований маршрут для сторінки класного керівника
+    path('homeroom/', views.homeroom_page, name='homeroom_page'),
 
     # Експорт звіту вчителя (T3)
     path('api/teacher/assignment/<int:assignment_id>/export/', views.export_grades_csv, name='export_grades_csv'),
