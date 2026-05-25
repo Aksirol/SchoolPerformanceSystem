@@ -1,3 +1,4 @@
+import json
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from .models import AcademicYear, Semester, Teacher, Subject, SchoolClass, Student, TeacherSubject, Grade
@@ -162,3 +163,99 @@ class AdminPanelTest(TestCase):
 
         # Перевіряємо, чи фізично з'явився предмет "Фізика" у базі даних
         self.assertTrue(Subject.objects.filter(name='Фізика').exists())
+
+
+class TeacherViewsTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+
+        # 1. Створюємо Вчителя
+        self.user_teacher = User.objects.create_user(username='teacher_anna', password='pass123', role='teacher')
+        self.teacher = Teacher.objects.create(
+            user=self.user_teacher, first_name='Ганна', last_name='Коваленко', email='hanna@school.com'
+        )
+
+        # 2. Створюємо Учня
+        self.user_student = User.objects.create_user(username='student_oleg', password='pass123', role='student')
+
+        # 3. Базові сутності (Рік, Семестр, Клас)
+        self.year = AcademicYear.objects.create(name='2023-2024', start_date=datetime.date(2023, 9, 1),
+                                                end_date=datetime.date(2024, 5, 31))
+        self.semester = Semester.objects.create(number=1, academic_year=self.year, start_date=datetime.date(2023, 9, 1),
+                                                end_date=datetime.date(2023, 12, 24))
+        self.school_class = SchoolClass.objects.create(name='10-Б', grade_number=10, academic_year=self.year)
+
+        self.student = Student.objects.create(
+            user=self.user_student, first_name='Олег', last_name='Сидоренко',
+            birth_date=datetime.date(2008, 1, 1), school_class=self.school_class
+        )
+
+        # 4. Призначаємо вчителя на предмет у цьому класі
+        self.subject = Subject.objects.create(name='Інформатика')
+        self.assignment = TeacherSubject.objects.create(
+            teacher=self.teacher, subject=self.subject, school_class=self.school_class
+        )
+
+    def test_access_denied_for_student(self):
+        """Перевірка розмежування прав: учень отримує помилку 403 (Forbidden) при спробі зайти в панель вчителя"""
+        self.client.login(username='student_oleg', password='pass123')
+        response = self.client.get(reverse('school:teacher_dashboard'))
+        self.assertEqual(response.status_code, 403)
+
+    def test_teacher_dashboard_data(self):
+        """Перевірка, що вчитель отримує правильний список своїх предметів"""
+        self.client.login(username='teacher_anna', password='pass123')
+        response = self.client.get(reverse('school:teacher_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+
+        self.assertEqual(len(data['assignments']), 1)
+        self.assertEqual(data['assignments'][0]['subject'], 'Інформатика')
+        self.assertEqual(data['assignments'][0]['class'], '10-Б')
+
+    def test_add_valid_grade(self):
+        """T1: Перевірка успішного виставлення оцінки через POST-запит"""
+        self.client.login(username='teacher_anna', password='pass123')
+        url = reverse('school:add_grade', kwargs={
+            'assignment_id': self.assignment.id,
+            'student_id': self.student.id,
+            'semester_id': self.semester.id
+        })
+
+        payload = {
+            'value': 11,
+            'grade_type': 'Оцінка',
+            'grade_date': '2023-10-20',
+            'comment': 'Відмінна робота'
+        }
+
+        # Надсилаємо JSON запит, як це робитиме фронтенд
+        response = self.client.post(url, data=json.dumps(payload), content_type='application/json')
+
+        self.assertEqual(response.status_code, 200)
+        # Перевіряємо, чи фізично збереглася оцінка 11 у базі
+        self.assertTrue(Grade.objects.filter(student=self.student, value=11).exists())
+
+    def test_invalid_grade_value_validation(self):
+        """Перевірка форми: неможливо поставити оцінку більше 12 балів"""
+        self.client.login(username='teacher_anna', password='pass123')
+        url = reverse('school:add_grade', kwargs={
+            'assignment_id': self.assignment.id,
+            'student_id': self.student.id,
+            'semester_id': self.semester.id
+        })
+
+        payload = {
+            'value': 15,  # Недопустиме значення
+            'grade_type': 'Оцінка',
+            'grade_date': '2023-10-20'
+        }
+
+        response = self.client.post(url, data=json.dumps(payload), content_type='application/json')
+
+        # Очікуємо статус 400 (Bad Request)
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.content)
+        # Перевіряємо, що помилка стосується саме поля 'value'
+        self.assertIn('value', data['errors'])
